@@ -38,7 +38,7 @@
 <p>Clicked context menu item: @clickedItem?.DisplayName</p>
 
 <h2>Server paging, server sorting</h2>
-<HxGrid TItem="CultureInfo" @ref="serverSideGrid" @bind-SelectedDataItem="@serverSideCurrentCultureInfo" DataProvider="@ServerCultureInfosDataProvider" @bind-CurrentUserState="serverSideGridUserState" PageSize="@PageSize" MultiSelectionEnabled="@multiSelectionEnabled" SelectionEnabled="false">
+<HxGrid TItem="CultureInfo" @ref="serverSideGrid" @bind-SelectedDataItem="@serverSideCurrentCultureInfo" DataProvider="@ServerCultureInfosDataProvider" @bind-CurrentUserState="serverSideGridUserState" PageSize="@PageSize" MultiSelectionEnabled="@multiSelectionEnabled" SelectionEnabled="true">
     <Columns>
         <HxGridColumn TItem="CultureInfo" HeaderText="Display Name" ItemTextSelector="@(item => item.DisplayName)" SortString="@nameof(CultureInfo.DisplayName)" FooterText="This is a footer" />
         <HxGridColumn TItem="CultureInfo" HeaderText="Name" ItemTextSelector="@(item => item.Name)" SortString="@nameof(CultureInfo.Name)" />
@@ -46,7 +46,8 @@
 </HxGrid>
 <p>Current CultureInfo: @serverSideCurrentCultureInfo?.DisplayName</p>
 <HxButton Text="Toggle multiselect" Color="ThemeColor.Secondary" OnClick="() => multiSelectionEnabled = !multiSelectionEnabled" />
-<HxButton Text="Next page" Color="ThemeColor.Secondary" OnClick="() => serverSideGridUserState = serverSideGridUserState with { PageIndex = serverSideGridUserState.PageIndex + 1 }" />
+<HxButton Text="Previous page" Color="ThemeColor.Secondary" OnClick="HandlePreviousPageClick" />
+<HxButton Text="Next page" Color="ThemeColor.Secondary" OnClick="HandleNextPageClick" />
 
 <h2>Empty data with @nameof(HxGrid<object>.EmptyDataTemplate)</h2>
 <HxGrid TItem="CultureInfo" DataProvider="@EmptyCultureInfosDataProvider">
@@ -67,7 +68,7 @@
     private HxGrid<CultureInfo>
     serverSideGrid;
 
-    private bool multiSelectionEnabled = true;
+    private bool multiSelectionEnabled = false;
     private int skip = 0;
 
     // LOCAL
@@ -98,20 +99,45 @@
         return request.ApplyTo(cultures);
     }
 
+    enum GridPreselectItem { First, Last }
+    private GridPreselectItem gridPreselectItem = GridPreselectItem.First;
+
+    private void HandleNextPageClick()
+    {
+        gridPreselectItem = GridPreselectItem.First;
+        serverSideGridUserState = serverSideGridUserState with { PageIndex = serverSideGridUserState.PageIndex + 1 };
+    }
+
+    private void HandlePreviousPageClick()
+    {
+        gridPreselectItem = GridPreselectItem.Last;
+        serverSideGridUserState = serverSideGridUserState with { PageIndex = serverSideGridUserState.PageIndex - 1 };
+    }
+
     private async Task<GridDataProviderResult<CultureInfo>> ServerCultureInfosDataProvider(GridDataProviderRequest<CultureInfo> request)
     {
+        Console.WriteLine("ServerCultureInfosDataProvider");
+
         await Task.Delay(3000); // simulate server call
 
         var cultures = GetCultureInfos();
         cultures.Sort(request.Sorting.ToGenericPropertyComparer());
 
+        var myData = cultures
+                    .Skip(request.StartIndex)
+                    .Take(PageSize)
+                    .ToList();
+
+        if (!myData.Contains(serverSideCurrentCultureInfo))
+        {
+            serverSideCurrentCultureInfo = (gridPreselectItem == GridPreselectItem.First) ? myData.FirstOrDefault() : myData.LastOrDefault();
+            StateHasChanged();
+        }
+
         return new GridDataProviderResult<CultureInfo>()
             {
                 TotalCount = cultures.Count(),
-                Data = cultures
-                    .Skip(request.StartIndex)
-                    .Take(PageSize)
-                    .ToList()
+                Data = myData
             };
     }
 
